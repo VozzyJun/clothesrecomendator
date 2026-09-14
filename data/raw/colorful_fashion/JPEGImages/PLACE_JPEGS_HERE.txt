@@ -1,0 +1,5 @@
+Extract the "colorful_fashion_dataset_for_object_detection" JPEGImages/*.jpg
+files here if you want to re-run `python -m src.garment_indexer` from
+scratch. Not required to run the Streamlit app itself, since
+data/processed/garment_catalog.csv and data/processed/crops/ are already
+pre-built and included.

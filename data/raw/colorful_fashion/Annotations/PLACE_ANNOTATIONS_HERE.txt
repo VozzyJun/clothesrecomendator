@@ -1,0 +1,4 @@
+Extract the "colorful_fashion_dataset_for_object_detection" Annotations/*.xml
+(PASCAL VOC) files here if you want to re-run
+`python -m src.garment_indexer` from scratch. Not required to run the
+Streamlit app itself.

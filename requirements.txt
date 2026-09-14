@@ -1,0 +1,13 @@
+# NOTE on mediapipe version: newer mediapipe wheels (0.10.30+) dropped the
+# legacy `mediapipe.solutions` API (FaceMesh, etc.) in favor of the new
+# Tasks API. This project's skin_analyzer.py uses the classic `solutions`
+# API, so mediapipe is pinned to the last release line that ships it.
+streamlit>=1.38,<2.0
+opencv-python-headless>=4.9,<5.0
+mediapipe==0.10.14
+protobuf>=4.25,<5.0
+numpy>=1.26,<3.0
+pandas>=2.1,<3.0
+scikit-learn>=1.4,<2.0
+tqdm>=4.66,<5.0
+Pillow>=10.0,<11.0

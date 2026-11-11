@@ -43,18 +43,178 @@ from src.closet_engine import (
 from src.closet_store import add_user_garment
 from src.color_utils import crop_by_margins
 from src.palette_engine import PaletteEngine
+from src.pdf_generator import build_pdf_report
 from src.recommender import Recommender
 from src.skin_analyzer import NoFaceDetectedError, SkinAnalyzer
 
 st.set_page_config(
-    page_title="Color Analysis & Clothing Recommender",
+    page_title="MyHue - Color Analysis & Clothing Recommender",
     page_icon="🎨",
     layout="wide",
 )
 
+LOGO_PATH = Path("assets/logo.png")
 CATALOG_CSV = Path("data/processed/garment_catalog.csv")
 RULES_CSV = Path("data/raw/fashion_and_color_recommendation.csv")
 GARMENT_CATEGORIES = list(CATEGORY_SLOT.keys())  # shirt, jacket, pants, shorts, skirt, dress
+
+# Palette used throughout the custom-rendered HTML snippets below. Keep in
+# sync with .streamlit/config.toml (which themes the native widgets).
+THEME = {
+    "accent": "#B5562E",       # terracotta -- primary accent
+    "accent_dark": "#8B4020",
+    "accent_soft": "#F1D9C9",
+    "ink": "#2E2823",          # main text
+    "ink_soft": "#6B6055",     # secondary text
+    "paper": "#FFFFFF",        # card background
+    "bg": "#FBF7F2",           # page background
+    "border": "rgba(46,40,35,0.10)",
+    "good": "#2E9E5B",
+    "ok": "#C7A400",
+    "caution": "#D9822B",
+    "avoid": "#C1392B",
+}
+
+
+def inject_custom_css() -> None:
+    st.markdown(
+        f"""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
+
+        html, body, [class*="css"] {{
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }}
+
+        /* headings use a warm editorial serif */
+        h1, h2, h3 {{
+            font-family: 'Fraunces', Georgia, serif !important;
+            color: {THEME['ink']} !important;
+            font-weight: 600 !important;
+        }}
+
+        /* tighten the default top padding */
+        .block-container {{
+            padding-top: 2rem;
+            padding-bottom: 3rem;
+        }}
+
+        /* sidebar */
+        [data-testid="stSidebar"] {{
+            background: {THEME['bg']};
+            border-right: 1px solid {THEME['border']};
+        }}
+        [data-testid="stSidebar"] h1 {{
+            font-size: 1.35rem !important;
+        }}
+
+        /* thin, accent-tinted dividers everywhere */
+        hr {{
+            border: none;
+            border-top: 1px solid {THEME['border']};
+            margin: 1.1rem 0;
+        }}
+
+        /* buttons */
+        .stButton > button {{
+            border-radius: 999px;
+            font-weight: 600;
+            border: 1px solid {THEME['border']};
+            transition: transform 0.05s ease-in-out;
+        }}
+        .stButton > button:hover {{
+            transform: translateY(-1px);
+            border-color: {THEME['accent']};
+            color: {THEME['accent']};
+        }}
+        .stButton > button[kind="primary"] {{
+            background: {THEME['accent']};
+            border: none;
+        }}
+        .stButton > button[kind="primary"]:hover {{
+            background: {THEME['accent_dark']};
+            color: white;
+        }}
+
+        /* metrics */
+        [data-testid="stMetric"] {{
+            background: {THEME['paper']};
+            border: 1px solid {THEME['border']};
+            border-radius: 12px;
+            padding: 0.6rem 0.9rem;
+        }}
+        [data-testid="stMetricLabel"] {{
+            color: {THEME['ink_soft']};
+        }}
+
+        /* expanders */
+        [data-testid="stExpander"] {{
+            background: {THEME['paper']};
+            border: 1px solid {THEME['border']};
+            border-radius: 12px;
+        }}
+
+        /* camera / file uploader */
+        [data-testid="stCameraInput"], [data-testid="stFileUploaderDropzone"] {{
+            border-radius: 12px;
+        }}
+
+        /* images get soft rounded corners */
+        [data-testid="stImage"] img {{
+            border-radius: 10px;
+        }}
+
+        /* generic "card" surfaces used via st.container(key=...) */
+        .st-key-hero_a, .st-key-hero_b {{
+            background: linear-gradient(135deg, {THEME['accent']} 0%, {THEME['accent_dark']} 100%);
+            border-radius: 18px;
+            padding: 1.6rem 1.8rem;
+            margin-bottom: 1.4rem;
+        }}
+        .st-key-hero_a h1, .st-key-hero_b h1 {{
+            color: white !important;
+            margin-bottom: 0.2rem !important;
+        }}
+        .st-key-hero_a p, .st-key-hero_b p {{
+            color: rgba(255,255,255,0.92) !important;
+            font-size: 1.02rem;
+            margin: 0;
+        }}
+
+        div[class*="st-key-item_card_"], div[class*="st-key-combo_card_"], div[class*="st-key-catalog_card_"] {{
+            background: {THEME['paper']};
+            border: 1px solid {THEME['border']};
+            border-radius: 14px;
+            padding: 0.9rem 1rem 1.1rem 1rem;
+            box-shadow: 0 1px 3px rgba(46,40,35,0.06);
+            margin-bottom: 0.9rem;
+        }}
+
+        .st-key-profile_box {{
+            background: {THEME['accent_soft']};
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+            margin-bottom: 0.6rem;
+        }}
+
+        .st-key-pdf_export_card {{
+            background: linear-gradient(135deg, #FBF7F2 0%, #F5ECE3 100%);
+            border: 1px solid rgba(181, 86, 46, 0.25);
+            border-radius: 14px;
+            padding: 1.1rem 1.4rem;
+            margin: 1.2rem 0;
+            box-shadow: 0 2px 6px rgba(46,40,35,0.04);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_hero(icon: str, title: str, subtitle: str, key: str) -> None:
+    with st.container(key=key):
+        st.markdown(f"# {icon} {title}")
+        st.markdown(f"<p>{subtitle}</p>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -94,9 +254,10 @@ def render_swatch_row(swatches: list, chip_size_px: int = 64) -> None:
                 <div style="
                     background-color:{sw['hex']};
                     width:100%; height:{chip_size_px}px;
-                    border-radius:8px; border:1px solid rgba(0,0,0,0.15);
+                    border-radius:10px; border:1px solid rgba(0,0,0,0.12);
+                    box-shadow: 0 1px 2px rgba(46,40,35,0.08);
                 "></div>
-                <p style="text-align:center; font-size:0.8rem; margin-top:4px;">
+                <p style="text-align:center; font-size:0.8rem; margin-top:6px; color:{THEME['ink_soft']};">
                     {sw['name']}<br><code>{sw['hex']}</code>
                 </p>
                 """,
@@ -107,17 +268,20 @@ def render_swatch_row(swatches: list, chip_size_px: int = 64) -> None:
 def render_score_bar(pct: float, verdict: str, caption: str = "") -> None:
     """A small colored progress bar + verdict label, used throughout the
     My Closet section."""
-    color = "#2E9E5B" if pct >= 75 else "#C7A400" if pct >= 55 else (
-        "#D9822B" if pct >= 35 else "#C1392B"
+    color = (
+        THEME["good"] if pct >= 75 else
+        THEME["ok"] if pct >= 55 else
+        THEME["caution"] if pct >= 35 else
+        THEME["avoid"]
     )
     st.markdown(
         f"""
         <div style="margin: 4px 0 2px 0;">
-            <div style="background:#eee; border-radius:6px; height:14px; width:100%;">
-                <div style="background:{color}; width:{pct}%; height:14px; border-radius:6px;"></div>
+            <div style="background:{THEME['accent_soft']}; border-radius:8px; height:12px; width:100%;">
+                <div style="background:{color}; width:{pct}%; height:12px; border-radius:8px;"></div>
             </div>
-            <p style="margin:2px 0 0 0; font-size:0.85rem;">
-                <b>{pct:.0f}%</b> &middot; {verdict}{(' &middot; ' + caption) if caption else ''}
+            <p style="margin:4px 0 0 0; font-size:0.85rem; color:{THEME['ink_soft']};">
+                <b style="color:{THEME['ink']};">{pct:.0f}%</b> &middot; {verdict}{(' &middot; ' + caption) if caption else ''}
             </p>
         </div>
         """,
@@ -128,7 +292,7 @@ def render_score_bar(pct: float, verdict: str, caption: str = "") -> None:
 def swatch_dot(hex_code: str, size: int = 16) -> str:
     return (
         f'<span style="display:inline-block; width:{size}px; height:{size}px; '
-        f'border-radius:4px; background:{hex_code}; border:1px solid rgba(0,0,0,0.2); '
+        f'border-radius:5px; background:{hex_code}; border:1px solid rgba(0,0,0,0.2); '
         f'vertical-align:middle;"></span>'
     )
 
@@ -136,7 +300,13 @@ def swatch_dot(hex_code: str, size: int = 16) -> str:
 # ---------------------------------------------------------------------------
 # Sidebar: top-level mode switch
 # ---------------------------------------------------------------------------
-st.sidebar.title("🎨 Color Recommender")
+inject_custom_css()
+
+if LOGO_PATH.exists():
+    st.sidebar.image(str(LOGO_PATH), use_container_width=True)
+else:
+    st.sidebar.title("🎨 MyHue Recommender")
+
 mode = st.sidebar.radio(
     "Mode", ["🧑 Get My Colors", "👕 My Closet"], index=0,
     help="Analyze your skin tone, or upload your own clothes to check fit & mix-and-match.",
@@ -162,6 +332,20 @@ def page_get_my_colors() -> None:
     input_mode = st.sidebar.radio(
         "Photo source", ["Webcam", "Upload a photo"], index=0,
         key="colors_input_mode", label_visibility="collapsed",
+    )
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Camera correction")
+    apply_awb = st.sidebar.checkbox(
+        "Auto white balance (AWB)", value=True,
+        help=(
+            "Estimates the camera's color cast from the background around "
+            "your face (not from your face itself) and corrects for it "
+            "before sampling skin color -- helps even out results between "
+            "a well-calibrated camera and a cheap one with a strong tint. "
+            "It's a best-effort heuristic, not a perfect fix -- turn it "
+            "off to compare against the raw, uncorrected reading."
+        ),
     )
 
     st.sidebar.markdown("---")
@@ -191,11 +375,13 @@ def page_get_my_colors() -> None:
             "to build `data/processed/garment_catalog.csv` first."
         )
 
-    st.title("🎨 Color Analysis & Clothing Recommender")
-    st.write(
+    render_hero(
+        "🎨",
+        "Color Analysis & Clothing Recommender",
         "Take a selfie or upload a photo. We'll analyze your skin tone and "
         "undertone from CIELAB / ITA, then recommend real clothing items "
-        "whose dominant color best matches your ideal palette (CIEDE2000)."
+        "whose dominant color best matches your ideal palette (CIEDE2000).",
+        key="hero_a",
     )
 
     image_bgr = None
@@ -215,7 +401,7 @@ def page_get_my_colors() -> None:
     analyzer = get_skin_analyzer()
     with st.spinner("Analyzing skin tone..."):
         try:
-            result = analyzer.analyze(image_bgr, draw_debug=True)
+            result = analyzer.analyze(image_bgr, draw_debug=True, apply_awb=apply_awb)
         except NoFaceDetectedError as exc:
             st.error(str(exc))
             return
@@ -250,6 +436,19 @@ def page_get_my_colors() -> None:
             unsafe_allow_html=True,
         )
 
+        if result.awb_applied and result.awb_method != "none":
+            method_label = {
+                "face_excluded_gray_world": "background-based (face excluded)",
+                "shades_of_gray": "whole-image fallback",
+            }.get(result.awb_method, result.awb_method)
+            st.caption(
+                f"🎛️ Auto white balance applied — {method_label}. "
+                f"Channel gains (B,G,R): {result.awb_gains_bgr}. "
+                "Turn this off in the sidebar to compare against the raw reading."
+            )
+        elif not result.awb_applied:
+            st.caption("🎛️ Auto white balance is turned off — showing the raw, uncorrected reading.")
+
     # Persist for reuse in the My Closet tab.
     st.session_state.skin_result = result
 
@@ -277,6 +476,32 @@ def page_get_my_colors() -> None:
             st.markdown(f"**Don't exaggerate:** {', '.join(style['dont_exaggerate'])}")
             st.markdown(f"**Do exaggerate:** {', '.join(style['do_exaggerate'])}")
 
+    # ------------------------------------------------------------------
+    # Downloadable PDF Report Card
+    # ------------------------------------------------------------------
+    with st.container(key="pdf_export_card"):
+        col_pdf_desc, col_pdf_act = st.columns([2.8, 1.2])
+        with col_pdf_desc:
+            st.markdown("### 📄 Unduh Laporan Analisis Warna (PDF)")
+            st.caption(
+                "Dapatkan berkas ringkasan resmi MyHue dalam format PDF siap cetak. "
+                "Berisi hasil pengukuran skin tone, undertone, palet warna terbaik, "
+                "warna yang dihindari, serta panduan bahan & perhiasan yang serasi."
+            )
+        with col_pdf_act:
+            pdf_buffer = build_pdf_report(
+                skin_result=result,
+                palette=palette,
+                logo_path=LOGO_PATH if LOGO_PATH.exists() else None,
+            )
+            st.download_button(
+                label="📥 Unduh PDF Laporan",
+                data=pdf_buffer.getvalue(),
+                file_name=f"MyHue_Color_Report_{result.skin_tone}_{result.undertone}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
     st.markdown("---")
     st.header("👗 Matching clothing items")
     if recommender is None:
@@ -288,11 +513,12 @@ def page_get_my_colors() -> None:
             st.info("No garments matched the current filters. Try 'All' categories.")
         else:
             n_cols = 4
-            rows = [ranked.iloc[i : i + n_cols] for i in range(0, len(ranked), n_cols)]
+            indexed = list(enumerate(ranked.iterrows()))
+            rows = [indexed[i : i + n_cols] for i in range(0, len(indexed), n_cols)]
             for row_chunk in rows:
                 cols = st.columns(n_cols)
-                for col, (_, item) in zip(cols, row_chunk.iterrows()):
-                    with col:
+                for col, (idx, (_, item)) in zip(cols, row_chunk):
+                    with col, st.container(key=f"catalog_card_{idx}"):
                         crop_path = item.get("crop_path", "")
                         if crop_path and Path(crop_path).exists():
                             st.image(str(crop_path), width='stretch')
@@ -303,7 +529,7 @@ def page_get_my_colors() -> None:
                                 {swatch_dot(item['dominant_hex'])}
                                 <b>{item['category'].title()}</b>
                             </div>
-                            <p style="font-size:0.8rem; margin:2px 0 0 0;">
+                            <p style="font-size:0.8rem; margin:2px 0 0 0; color:{THEME['ink_soft']};">
                                 ΔE00 match: {item['match_distance']:.2f} ·
                                 <code>{item['dominant_hex']}</code>{source_tag}
                             </p>
@@ -323,12 +549,14 @@ def page_get_my_colors() -> None:
 # MODE B: My Closet -- upload your own clothes
 # ===========================================================================
 def page_my_closet() -> None:
-    st.title("👕 My Closet")
-    st.write(
+    render_hero(
+        "👕",
+        "My Closet",
         "Upload photos of your own clothes. Each item is scored against "
         "your color palette, pairs are scored for outfit harmony (e.g. "
-        "*does this shirt work with these jeans?*), and every valid "
-        "combination across your uploads is ranked for you."
+        "does this shirt work with these jeans?), and every valid "
+        "combination across your uploads is ranked for you.",
+        key="hero_b",
     )
 
     # -- 1. Color profile (reuse the analyzed one, or pick manually) --------
@@ -349,7 +577,33 @@ def page_my_closet() -> None:
         undertone = st.sidebar.selectbox("Undertone", palette_engine.available_undertones())
 
     palette = palette_engine.get_palette(skin_tone, undertone)
-    st.info(f"Scoring against: **{skin_tone} skin / {undertone} undertone** palette.")
+    with st.container(key="profile_box"):
+        cols_pb1, cols_pb2 = st.columns([3, 1.2])
+        with cols_pb1:
+            st.markdown(
+                f"Scoring against: **{skin_tone} skin / {undertone} undertone** palette."
+            )
+        with cols_pb2:
+            res_obj = st.session_state.skin_result or {
+                "skin_tone": skin_tone,
+                "undertone": undertone,
+                "ita": 0.0,
+                "lab": (0, 0, 0),
+                "hex": "#C89D7C",
+                "rgb": (200, 157, 124),
+            }
+            pdf_bytes = build_pdf_report(
+                skin_result=res_obj,
+                palette=palette,
+                logo_path=LOGO_PATH if LOGO_PATH.exists() else None,
+            ).getvalue()
+            st.download_button(
+                label="📄 Unduh PDF Profil",
+                data=pdf_bytes,
+                file_name=f"MyHue_Color_Report_{skin_tone}_{undertone}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
     # -- 2. Upload + per-item setup -----------------------------------------
     st.subheader("1. Upload your clothes")
@@ -423,12 +677,13 @@ def page_my_closet() -> None:
     # -- 4. Per-item personal match results ---------------------------------
     st.subheader("3. Does each item suit you?")
     n_cols = 3
-    rows = [closet_data[i : i + n_cols] for i in range(0, len(closet_data), n_cols)]
+    indexed = list(enumerate(closet_data))
+    rows = [indexed[i : i + n_cols] for i in range(0, len(indexed), n_cols)]
     for row_chunk in rows:
         cols = st.columns(n_cols)
-        for col, entry in zip(cols, row_chunk):
+        for col, (idx, entry) in zip(cols, row_chunk):
             item = entry["item"]
-            with col:
+            with col, st.container(key=f"item_card_{idx}"):
                 st.image(
                     cv2.cvtColor(entry["crop_bgr"], cv2.COLOR_BGR2RGB),
                     width='stretch',
@@ -501,9 +756,9 @@ def page_my_closet() -> None:
             "outfit combos -- accessories/jackets alone aren't enough."
         )
     else:
-        for combo in combos:
-            piece_labels = " + ".join(f"{i.label} ({i.category})" for i in combo.items)
-            with st.container(border=True):
+        for i, combo in enumerate(combos):
+            piece_labels = " + ".join(f"{it.label} ({it.category})" for it in combo.items)
+            with st.container(key=f"combo_card_{i}"):
                 cols = st.columns([2, 1, 1, 1])
                 with cols[0]:
                     st.markdown(f"**{piece_labels}**")

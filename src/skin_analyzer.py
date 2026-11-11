@@ -9,6 +9,11 @@ pixels from both cheeks, and derives:
   * Individual Typology Angle (ITA) -> skin tone category
   * Undertone (Warm / Cool / Neutral) from the Lab hue angle
 
+Before sampling, an automatic white balance (AWB) correction (see
+`white_balance.py`) is estimated from the region *around* the face and
+applied to the photo, so a camera with a color cast doesn't push the
+measured undertone off nearly as much as it otherwise would.
+
 The categories produced here are chosen to line up exactly with the
 `Skin Tone` and `Under Tone` columns found in
 `data/raw/fashion_and_color_recommendation.csv`:
@@ -31,6 +36,8 @@ from typing import Optional, Tuple
 
 import cv2
 import numpy as np
+
+from src.white_balance import DEFAULT_STRENGTH, auto_white_balance
 
 try:
     import mediapipe as mp
@@ -68,6 +75,9 @@ class SkinAnalysisResult:
     face_bbox: Tuple[int, int, int, int]  # x, y, w, h in pixel coords
     cheek_points_px: list = field(default_factory=list)
     annotated_bgr: Optional[np.ndarray] = None
+    awb_applied: bool = False
+    awb_method: str = "none"
+    awb_gains_bgr: Tuple[float, float, float] = (1.0, 1.0, 1.0)
 
 
 class NoFaceDetectedError(RuntimeError):
@@ -247,10 +257,22 @@ class SkinAnalyzer:
     # Public API
     # ------------------------------------------------------------------
     def analyze(
-        self, image_bgr: np.ndarray, draw_debug: bool = True
+        self,
+        image_bgr: np.ndarray,
+        draw_debug: bool = True,
+        apply_awb: bool = True,
+        awb_strength: float = DEFAULT_STRENGTH,
     ) -> SkinAnalysisResult:
         """Run full skin analysis on a single BGR image (e.g. a webcam
         frame or an uploaded selfie).
+
+        If `apply_awb` is True (the default), a color-cast correction is
+        estimated from the background around the detected face -- *not*
+        from the face itself -- and applied before cheek pixels are
+        sampled. This helps even out results between a well white-balanced
+        camera and a cheap one with a strong color cast, without erasing
+        the skin's own real warm/cool undertone in the process. See
+        `white_balance.py` for the method details.
 
         Raises NoFaceDetectedError if no face could be located.
         """
@@ -263,7 +285,27 @@ class SkinAnalyzer:
             )
 
         pts_px = self._landmarks_to_px(landmarks, w, h)
-        raw_pixels_bgr, cheek_points = self._cheek_pixels(image_bgr, pts_px)
+        xs, ys = pts_px[:, 0], pts_px[:, 1]
+        face_bbox = (
+            int(xs.min()),
+            int(ys.min()),
+            int(xs.max() - xs.min()),
+            int(ys.max() - ys.min()),
+        )
+
+        # Correct a likely camera color cast *before* sampling skin pixels,
+        # using the background (not the face) to estimate the cast.
+        awb_method = "none"
+        awb_gains = (1.0, 1.0, 1.0)
+        working_image = image_bgr
+        if apply_awb:
+            working_image, awb_info = auto_white_balance(
+                image_bgr, face_bbox=face_bbox, strength=awb_strength
+            )
+            awb_method = awb_info["method"]
+            awb_gains = awb_info["gains_bgr"]
+
+        raw_pixels_bgr, cheek_points = self._cheek_pixels(working_image, pts_px)
         pixels_bgr = self._filter_outlier_pixels(raw_pixels_bgr)
 
         mean_bgr = pixels_bgr.mean(axis=0)
@@ -277,17 +319,9 @@ class SkinAnalyzer:
         rgb_int = tuple(int(round(c)) for c in mean_rgb)
         hex_code = "#{:02x}{:02x}{:02x}".format(*rgb_int)
 
-        xs, ys = pts_px[:, 0], pts_px[:, 1]
-        face_bbox = (
-            int(xs.min()),
-            int(ys.min()),
-            int(xs.max() - xs.min()),
-            int(ys.max() - ys.min()),
-        )
-
         annotated = None
         if draw_debug:
-            annotated = image_bgr.copy()
+            annotated = working_image.copy()
             face_width = abs(pts_px[FACE_WIDTH_IDX[1]][0] - pts_px[FACE_WIDTH_IDX[0]][0])
             radius = max(int(face_width * 0.045), 4)
             for pt in cheek_points:
@@ -307,6 +341,9 @@ class SkinAnalyzer:
             face_bbox=face_bbox,
             cheek_points_px=cheek_points,
             annotated_bgr=annotated,
+            awb_applied=apply_awb,
+            awb_method=awb_method,
+            awb_gains_bgr=awb_gains,
         )
 
 
@@ -330,3 +367,4 @@ if __name__ == "__main__":
     print(f"ITA       : {result.ita}")
     print(f"Skin Tone : {result.skin_tone}")
     print(f"Undertone : {result.undertone}")
+    print(f"AWB method: {result.awb_method} (gains BGR: {result.awb_gains_bgr})")

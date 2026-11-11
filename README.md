@@ -30,6 +30,9 @@ End-to-end color analysis and clothing-recommendation app:
 7. **Personal Color PDF Report** — download a comprehensive, beautifully
    formatted PDF summary containing your skin tone, undertone, ITA metrics,
    recommended & avoid swatches with HEX codes, and fashion styling tips.
+8. **Shopee Smart Shopping Links** — toggleable shopping assistant that generates
+   direct search links on Shopee Indonesia for any recommended color swatch or matching
+   clothing piece, customized with target category filters (Semua, Wanita, Pria).
 
 ## The "My Closet" feature in detail
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import base64
 import io
+import urllib.parse
 from pathlib import Path
 
 import cv2
@@ -208,6 +209,12 @@ def inject_custom_css() -> None:
             margin: 1.2rem 0;
             box-shadow: 0 2px 6px rgba(46,40,35,0.04);
         }}
+
+        a[href*="shopee.co.id"]:hover {{
+            filter: brightness(1.08);
+            transform: translateY(-1px);
+            transition: all 0.15s ease-in-out;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -312,6 +319,43 @@ def render_safe_image(
         f'{cap_html}'
         f'</div>',
         unsafe_allow_html=True,
+    )
+
+
+def shopee_button_html(
+    query_text: str,
+    label: str = "Beli di Shopee",
+    target_audience: str = "Semua",
+) -> str:
+    """Generates an authentic Shopee search button linking to Shopee Indonesia."""
+    parts = []
+    if target_audience and target_audience != "Semua":
+        parts.append(target_audience.lower())
+
+    cat_map = {
+        "shirt": "kemeja baju",
+        "pants": "celana",
+        "jacket": "jaket outer",
+        "shorts": "celana pendek",
+        "skirt": "rok",
+        "dress": "dress terusan",
+    }
+    words = query_text.split()
+    translated_words = [cat_map.get(w.lower(), w) for w in words]
+    parts.extend(translated_words)
+
+    query = " ".join(parts).strip()
+    encoded = urllib.parse.quote(query)
+    url = f"https://shopee.co.id/search?keyword={encoded}"
+
+    return (
+        f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="'
+        f'display:flex; align-items:center; justify-content:center; gap:5px; '
+        f'background-color:#EE4D2D; color:#FFFFFF !important; text-decoration:none !important; '
+        f'padding:6px 10px; border-radius:999px; font-size:0.75rem; font-weight:600; '
+        f'box-shadow: 0 1px 3px rgba(238,77,45,0.25); margin-top:6px; text-align:center;">'
+        f'<span style="font-size:0.85rem;">🛍️</span> {label}'
+        f'</a>'
     )
 
 
@@ -443,6 +487,25 @@ def page_get_my_colors() -> None:
     category_choice = st.sidebar.selectbox("Garment type", category_options, index=0)
     top_n = st.sidebar.slider("Number of items to show", 4, 24, 12)
 
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🛍️ Belanja di Shopee")
+    enable_shopee = st.sidebar.checkbox(
+        "Tampilkan Link Belanja Shopee",
+        value=True,
+        help=(
+            "Aktifkan untuk menampilkan tombol belanja langsung ke Shopee berdasarkan "
+            "warna palet dan pakaian yang direkomendasikan."
+        ),
+    )
+    target_audience = "Semua"
+    if enable_shopee:
+        target_audience = st.sidebar.selectbox(
+            "Kategori Pengguna",
+            ["Semua", "Wanita", "Pria"],
+            index=0,
+            help="Menyesuaikan kata kunci pencarian pakaian di Shopee",
+        )
+
     if recommender is None:
         st.sidebar.warning(
             "Garment catalog not found. Run:\n\n`python -m src.garment_indexer`\n\n"
@@ -532,6 +595,40 @@ def page_get_my_colors() -> None:
 
     st.subheader("✅ Recommended clothing colors")
     render_swatch_row(palette["recommended_swatches"])
+
+    if enable_shopee and palette.get("recommended_swatches"):
+        with st.expander("🛍️ Cari Baju Berdasarkan Palet Ini di Shopee"):
+            st.caption("Pilih salah satu warna rekomendasi untuk mencari produk pakaian senada di Shopee Indonesia.")
+            sw_names = list(dict.fromkeys([s["name"].title() for s in palette["recommended_swatches"]]))
+            c_sh1, c_sh2, c_sh3 = st.columns([2, 2, 1.5])
+            with c_sh1:
+                chosen_color = st.selectbox("Pilih Warna", sw_names, key="shopee_color_picker")
+            with c_sh2:
+                chosen_item = st.selectbox(
+                    "Jenis Pakaian",
+                    ["Semua Pakaian", "Kemeja / Baju", "Celana", "Jaket / Outer", "Rok", "Dress"],
+                    key="shopee_item_picker",
+                )
+            with c_sh3:
+                st.write("")
+                st.write("")
+                cat_kw = {
+                    "Semua Pakaian": "baju pakaian",
+                    "Kemeja / Baju": "kemeja baju",
+                    "Celana": "celana",
+                    "Jaket / Outer": "jaket outer",
+                    "Rok": "rok",
+                    "Dress": "dress terusan",
+                }.get(chosen_item, "baju")
+                st.markdown(
+                    shopee_button_html(
+                        f"{cat_kw} {chosen_color}",
+                        label="Buka di Shopee",
+                        target_audience=target_audience,
+                    ),
+                    unsafe_allow_html=True,
+                )
+
     st.subheader("🚫 Colors to avoid")
     render_swatch_row(palette["avoid_swatches"])
 
@@ -609,6 +706,26 @@ def page_get_my_colors() -> None:
                             """,
                             unsafe_allow_html=True,
                         )
+                        if enable_shopee:
+                            cat_name = item['category']
+                            closest_swatch = (
+                                min(
+                                    palette["recommended_swatches"],
+                                    key=lambda s: abs(s["lab"][0] - item["lab_L"])
+                                    + abs(s["lab"][1] - item["lab_a"])
+                                    + abs(s["lab"][2] - item["lab_b"]),
+                                )["name"]
+                                if palette.get("recommended_swatches")
+                                else ""
+                            )
+                            st.markdown(
+                                shopee_button_html(
+                                    f"{cat_name} {closest_swatch}",
+                                    label="Beli di Shopee",
+                                    target_audience=target_audience,
+                                ),
+                                unsafe_allow_html=True,
+                            )
 
     st.markdown("---")
     st.caption(
@@ -648,6 +765,24 @@ def page_my_closet() -> None:
     else:
         skin_tone = st.sidebar.selectbox("Skin tone", palette_engine.available_skin_tones())
         undertone = st.sidebar.selectbox("Undertone", palette_engine.available_undertones())
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🛍️ Belanja di Shopee")
+    enable_shopee_closet = st.sidebar.checkbox(
+        "Tampilkan Link Belanja Shopee",
+        value=True,
+        key="shopee_closet_toggle",
+        help="Tampilkan tombol pencarian pakaian di Shopee.",
+    )
+    target_audience_closet = "Semua"
+    if enable_shopee_closet:
+        target_audience_closet = st.sidebar.selectbox(
+            "Kategori Pengguna",
+            ["Semua", "Wanita", "Pria"],
+            index=0,
+            key="shopee_closet_audience",
+            help="Menyesuaikan kata kunci pencarian pakaian di Shopee",
+        )
 
     palette = palette_engine.get_palette(skin_tone, undertone)
     with st.container(key="profile_box"):
@@ -771,6 +906,16 @@ def page_my_closet() -> None:
                         f"Closest recommended color: {item.personal.closest_recommended['name']} "
                         f"({item.personal.closest_recommended['hex']})"
                     )
+                    if enable_shopee_closet:
+                        rec_name = item.personal.closest_recommended["name"]
+                        st.markdown(
+                            shopee_button_html(
+                                f"{item.category} {rec_name}",
+                                label=f"Cari {rec_name.title()} di Shopee",
+                                target_audience=target_audience_closet,
+                            ),
+                            unsafe_allow_html=True,
+                        )
                 if not entry["added"]:
                     if st.button("➕ Add to garment catalog", key=f"add_{entry['filename']}"):
                         add_user_garment(

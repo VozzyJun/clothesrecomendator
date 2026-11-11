@@ -26,11 +26,14 @@ Run with:
 
 from __future__ import annotations
 
+import base64
+import io
 from pathlib import Path
 
 import cv2
 import numpy as np
 import streamlit as st
+from PIL import Image as PILImage
 
 from src.closet_engine import (
     CATEGORY_SLOT,
@@ -242,6 +245,76 @@ def decode_uploaded_image(uploaded_file) -> np.ndarray:
     return cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
 
+def render_safe_image(
+    img_input: np.ndarray | str | Path | PILImage.Image,
+    caption: str | None = None,
+    max_height: int | None = None,
+) -> None:
+    """Renders images reliably as embedded base64 data URIs.
+
+    This bypasses Streamlit's internal MediaFileManager race conditions
+    (which cause images to fail with a broken icon and '0') and works identically
+    across all Streamlit versions and cloud hosting environments.
+    """
+    if img_input is None:
+        return
+
+    mime = "image/jpeg"
+    b64_str = ""
+
+    if isinstance(img_input, (str, Path)):
+        p = Path(img_input)
+        if not p.exists():
+            st.caption("Image not available")
+            return
+        try:
+            with open(p, "rb") as f:
+                b64_str = base64.b64encode(f.read()).decode("utf-8")
+                mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
+        except Exception:
+            st.caption("Unable to load image")
+            return
+    elif isinstance(img_input, np.ndarray):
+        try:
+            pil_img = PILImage.fromarray(img_input)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="JPEG", quality=90)
+            b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+            mime = "image/jpeg"
+        except Exception:
+            st.caption("Unable to process image")
+            return
+    elif isinstance(img_input, PILImage.Image):
+        try:
+            buf = io.BytesIO()
+            fmt = img_input.format or "JPEG"
+            img_input.save(buf, format=fmt)
+            b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+            mime = f"image/{fmt.lower()}"
+        except Exception:
+            st.caption("Unable to process image")
+            return
+
+    ink_soft = THEME["ink_soft"]
+    cap_html = (
+        f'<p style="font-size:0.8rem; color:{ink_soft}; margin-top:5px; text-align:center;">{caption}</p>'
+        if caption
+        else ""
+    )
+    style = "width:100%; border-radius:10px; display:block; object-fit:cover;"
+    if max_height:
+        style += f" max-height:{max_height}px;"
+
+    alt_text = caption if caption else "image"
+    st.markdown(
+        f'<div style="width:100%; margin-bottom:8px;">'
+        f'<img src="data:{mime};base64,{b64_str}" style="{style}" alt="{alt_text}" />'
+        f'{cap_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_swatch_row(swatches: list, chip_size_px: int = 64) -> None:
     if not swatches:
         st.caption("No swatches available.")
@@ -303,7 +376,8 @@ def swatch_dot(hex_code: str, size: int = 16) -> str:
 inject_custom_css()
 
 if LOGO_PATH.exists():
-    st.sidebar.image(str(LOGO_PATH), use_container_width=True)
+    with st.sidebar:
+        render_safe_image(LOGO_PATH)
 else:
     st.sidebar.title("🎨 MyHue Recommender")
 
@@ -410,8 +484,7 @@ def page_get_my_colors() -> None:
     with col_img:
         st.subheader("Detected face & sampling regions")
         annotated_rgb = cv2.cvtColor(result.annotated_bgr, cv2.COLOR_BGR2RGB)
-        st.image(annotated_rgb, width='stretch')
-        st.caption("Green circles mark the cheek regions sampled for skin color.")
+        render_safe_image(annotated_rgb, caption="Green circles mark the cheek regions sampled for skin color.")
 
     with col_metrics:
         st.subheader("Skin analysis results")
@@ -520,8 +593,8 @@ def page_get_my_colors() -> None:
                 for col, (idx, (_, item)) in zip(cols, row_chunk):
                     with col, st.container(key=f"catalog_card_{idx}"):
                         crop_path = item.get("crop_path", "")
-                        if crop_path and Path(crop_path).exists():
-                            st.image(str(crop_path), width='stretch')
+                        if crop_path:
+                            render_safe_image(crop_path, max_height=200)
                         source_tag = " · your closet" if item.get("source") == "user_upload" else ""
                         st.markdown(
                             f"""
@@ -643,7 +716,7 @@ def page_my_closet() -> None:
                 bottom = st.slider("Bottom", 0, 45, 0, key=f"b_{f.name}_{i}")
             with c2:
                 cropped_rgb = crop_by_margins(img_rgb, left, right, top, bottom)
-                st.image(cropped_rgb, caption="Cropped preview", width='stretch')
+                render_safe_image(cropped_rgb, caption="Cropped preview")
 
         item_configs.append(
             {
@@ -684,10 +757,8 @@ def page_my_closet() -> None:
         for col, (idx, entry) in zip(cols, row_chunk):
             item = entry["item"]
             with col, st.container(key=f"item_card_{idx}"):
-                st.image(
-                    cv2.cvtColor(entry["crop_bgr"], cv2.COLOR_BGR2RGB),
-                    width='stretch',
-                )
+                crop_rgb = cv2.cvtColor(entry["crop_bgr"], cv2.COLOR_BGR2RGB)
+                render_safe_image(crop_rgb)
                 st.markdown(
                     f"**{item.label}** ({item.category}) {swatch_dot(item.hex)} `{item.hex}`",
                     unsafe_allow_html=True,

@@ -271,8 +271,8 @@ def build_pdf_report(
             with PILImage.open(str(logo_path)) as pimg:
                 img_w, img_h = pimg.size
             aspect = img_w / float(img_h) if img_h > 0 else 1.0
-            max_h = 48.0
-            max_w = 120.0
+            max_h = 54.0
+            max_w = 130.0
             if aspect > 1.8:
                 disp_w = min(max_w, max_h * aspect)
                 disp_h = disp_w / aspect
@@ -280,8 +280,8 @@ def build_pdf_report(
                 disp_h = max_h
                 disp_w = max_h * aspect
 
-            logo_img = Image(str(logo_path), width=disp_w, height=disp_h)
-            col_logo = max(disp_w + 10.0, 58.0)
+            logo_img = Image(str(logo_path), width=disp_w, height=disp_h, kind="proportional")
+            col_logo = max(disp_w + 12.0, 66.0)
             col_text = 520.0 - col_logo
             hdr_table = Table([[header_text, logo_img]], colWidths=[col_text, col_logo])
             hdr_table.setStyle(

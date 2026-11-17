@@ -215,6 +215,41 @@ def inject_custom_css() -> None:
             transform: translateY(-1px);
             transition: all 0.15s ease-in-out;
         }}
+
+        /* Responsive Brand Logo in Sidebar */
+        .myhue-sidebar-logo-container {{
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0.4rem 0 1rem 0;
+        }}
+
+        .myhue-sidebar-logo {{
+            width: 58% !important;
+            max-width: 185px !important;
+            min-width: 125px !important;
+            height: auto !important;
+            aspect-ratio: 1 / 1 !important;
+            display: block !important;
+            object-fit: contain !important;
+            border-radius: 50% !important;
+            filter: drop-shadow(0 4px 14px rgba(46, 40, 35, 0.09));
+            transition: transform 0.25s ease-in-out, filter 0.25s ease-in-out;
+        }}
+
+        .myhue-sidebar-logo:hover {{
+            transform: scale(1.03);
+            filter: drop-shadow(0 6px 18px rgba(46, 40, 35, 0.14));
+        }}
+
+        @media (max-width: 768px) {{
+            .myhue-sidebar-logo {{
+                width: 48% !important;
+                max-width: 150px !important;
+                min-width: 110px !important;
+            }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -310,14 +345,19 @@ def render_safe_image(
         else ""
     )
     if is_logo:
-        target_h = max_height if max_height else 125
-        style = f"max-height:{target_h}px; max-width:135px; margin:0 auto; display:block; object-fit:contain;"
-        container_style = "width:100%; text-align:center; margin-bottom:12px;"
-    else:
-        style = "width:100%; border-radius:10px; display:block; object-fit:cover;"
-        if max_height:
-            style += f" max-height:{max_height}px;"
-        container_style = "width:100%; margin-bottom:8px;"
+        alt_text = caption if caption else "MyHue Logo"
+        st.markdown(
+            f'<div class="myhue-sidebar-logo-container">'
+            f'<img src="data:{mime};base64,{b64_str}" class="myhue-sidebar-logo" alt="{alt_text}" />'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    style = "width:100%; border-radius:10px; display:block; object-fit:cover;"
+    if max_height:
+        style += f" max-height:{max_height}px;"
+    container_style = "width:100%; margin-bottom:8px;"
 
     alt_text = caption if caption else "image"
     st.markdown(

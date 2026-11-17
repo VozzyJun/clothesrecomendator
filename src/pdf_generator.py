@@ -259,29 +259,43 @@ def build_pdf_report(
     # ------------------------------------------------------------------
     # 1. Header with Logo and Meta
     # ------------------------------------------------------------------
-    logo_img = None
-    if logo_path and Path(logo_path).exists():
-        try:
-            logo_img = Image(str(logo_path), width=150, height=38)
-        except Exception:
-            logo_img = None
-
     date_str = datetime.now().strftime("%B %d, %Y")
     header_text = [
         Paragraph("<b>MYHUE PERSONAL COLOR REPORT</b>", title_style),
         Paragraph(f"Personal Color, Undertone & Fashion Guide  •  Issued on {date_str}", subtitle_style),
     ]
 
-    if logo_img:
-        hdr_table = Table([[header_text, logo_img]], colWidths=[370, 150])
-        hdr_table.setStyle(
-            TableStyle([
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ])
-        )
+    hdr_table = None
+    if logo_path and Path(logo_path).exists():
+        try:
+            with PILImage.open(str(logo_path)) as pimg:
+                img_w, img_h = pimg.size
+            aspect = img_w / float(img_h) if img_h > 0 else 1.0
+            max_h = 48.0
+            max_w = 120.0
+            if aspect > 1.8:
+                disp_w = min(max_w, max_h * aspect)
+                disp_h = disp_w / aspect
+            else:
+                disp_h = max_h
+                disp_w = max_h * aspect
+
+            logo_img = Image(str(logo_path), width=disp_w, height=disp_h)
+            col_logo = max(disp_w + 10.0, 58.0)
+            col_text = 520.0 - col_logo
+            hdr_table = Table([[header_text, logo_img]], colWidths=[col_text, col_logo])
+            hdr_table.setStyle(
+                TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ])
+            )
+        except Exception:
+            hdr_table = None
+
+    if hdr_table:
         story.append(hdr_table)
     else:
         story.extend(header_text)

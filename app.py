@@ -256,6 +256,7 @@ def render_safe_image(
     img_input: np.ndarray | str | Path | PILImage.Image,
     caption: str | None = None,
     max_height: int | None = None,
+    is_logo: bool = False,
 ) -> None:
     """Renders images reliably as embedded base64 data URIs.
 
@@ -308,13 +309,19 @@ def render_safe_image(
         if caption
         else ""
     )
-    style = "width:100%; border-radius:10px; display:block; object-fit:cover;"
-    if max_height:
-        style += f" max-height:{max_height}px;"
+    if is_logo:
+        target_h = max_height if max_height else 125
+        style = f"max-height:{target_h}px; max-width:135px; margin:0 auto; display:block; object-fit:contain;"
+        container_style = "width:100%; text-align:center; margin-bottom:12px;"
+    else:
+        style = "width:100%; border-radius:10px; display:block; object-fit:cover;"
+        if max_height:
+            style += f" max-height:{max_height}px;"
+        container_style = "width:100%; margin-bottom:8px;"
 
     alt_text = caption if caption else "image"
     st.markdown(
-        f'<div style="width:100%; margin-bottom:8px;">'
+        f'<div style="{container_style}">'
         f'<img src="data:{mime};base64,{b64_str}" style="{style}" alt="{alt_text}" />'
         f'{cap_html}'
         f'</div>',
@@ -421,7 +428,7 @@ inject_custom_css()
 
 if LOGO_PATH.exists():
     with st.sidebar:
-        render_safe_image(LOGO_PATH)
+        render_safe_image(LOGO_PATH, is_logo=True, max_height=125)
 else:
     st.sidebar.title("🎨 MyHue Recommender")
 

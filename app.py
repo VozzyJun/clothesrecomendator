@@ -222,32 +222,32 @@ def inject_custom_css() -> None:
             display: flex;
             justify-content: center;
             align-items: center;
-            margin: 0.4rem 0 1rem 0;
+            margin: 0.4rem 0 1.1rem 0;
         }}
 
         .myhue-sidebar-logo {{
-            width: 58% !important;
-            max-width: 185px !important;
-            min-width: 125px !important;
+            width: 65% !important;
+            max-width: 205px !important;
+            min-width: 135px !important;
             height: auto !important;
             aspect-ratio: 1 / 1 !important;
             display: block !important;
             object-fit: contain !important;
             border-radius: 50% !important;
-            filter: drop-shadow(0 4px 14px rgba(46, 40, 35, 0.09));
+            filter: drop-shadow(0 4px 16px rgba(181, 86, 46, 0.10));
             transition: transform 0.25s ease-in-out, filter 0.25s ease-in-out;
         }}
 
         .myhue-sidebar-logo:hover {{
             transform: scale(1.03);
-            filter: drop-shadow(0 6px 18px rgba(46, 40, 35, 0.14));
+            filter: drop-shadow(0 6px 20px rgba(181, 86, 46, 0.16));
         }}
 
         @media (max-width: 768px) {{
             .myhue-sidebar-logo {{
-                width: 48% !important;
-                max-width: 150px !important;
-                min-width: 110px !important;
+                width: 52% !important;
+                max-width: 160px !important;
+                min-width: 115px !important;
             }}
         }}
         </style>

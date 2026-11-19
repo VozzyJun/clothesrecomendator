@@ -44,6 +44,7 @@ from src.closet_engine import (
     personal_match,
     verdict_label,
 )
+from src.closet_detector import annotate_detected_garments, detect_garments_from_image
 from src.closet_store import add_user_garment
 from src.color_utils import crop_by_margins
 from src.palette_engine import PaletteEngine
@@ -892,54 +893,173 @@ def page_my_closet() -> None:
                 use_container_width=True,
             )
 
-    # -- 2. Upload + per-item setup -----------------------------------------
-    st.subheader("1. Upload your clothes")
-    uploaded_files = st.file_uploader(
-        "One photo per item works best (a fairly plain background helps color detection).",
-        type=["jpg", "jpeg", "png", "webp"],
-        accept_multiple_files=True,
-    )
-
-    if not uploaded_files:
-        st.info("👆 Upload one or more clothing photos to get started.")
-        return
-
-    st.caption(
-        "For each item: pick its category and, if needed, drag the crop "
-        "margins so the frame contains mostly the garment (not skin/background)."
+    # -- 2. Add clothes (Camera or Upload) + per-item setup -----------------
+    st.subheader("1. Add clothes to your closet")
+    closet_source = st.radio(
+        "Photo source",
+        ["📷 Live Camera (Auto-Detect Clothes)", "📁 Upload files"],
+        horizontal=True,
+        key="closet_source_choice",
+        help="Use your camera to snap clothes with AI auto-detection, or upload existing image files.",
     )
 
     item_configs = []
-    for i, f in enumerate(uploaded_files):
-        img_bgr = decode_uploaded_image(f)
-        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-        with st.expander(f"🧥 {f.name}", expanded=(i == 0)):
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                category = st.selectbox(
-                    "Category", GARMENT_CATEGORIES, key=f"cat_{f.name}_{i}"
-                )
-                nickname = st.text_input(
-                    "Nickname (optional)", value=Path(f.name).stem, key=f"nick_{f.name}_{i}"
-                )
-                st.caption("Crop margins (%) -- trim away background/skin")
-                left = st.slider("Left", 0, 45, 0, key=f"l_{f.name}_{i}")
-                right = st.slider("Right", 0, 45, 0, key=f"r_{f.name}_{i}")
-                top = st.slider("Top", 0, 45, 0, key=f"t_{f.name}_{i}")
-                bottom = st.slider("Bottom", 0, 45, 0, key=f"b_{f.name}_{i}")
-            with c2:
-                cropped_rgb = crop_by_margins(img_rgb, left, right, top, bottom)
-                render_safe_image(cropped_rgb, caption="Cropped preview")
+    if closet_source == "📷 Live Camera (Auto-Detect Clothes)":
+        c_cam, c_info = st.columns([1.1, 0.9])
+        with c_cam:
+            camera_file = st.camera_input("Take a photo of your clothes (worn or flat)")
+        with c_info:
+            st.markdown(
+                """
+                **💡 Tips pengambilan foto kamera:**
+                * **Pakai pakaiannya** (selfie/webcam): AI akan otomatis mendeteksi dan memisahkan **atasan** (*shirt*) dan **bawahan** (*pants/skirt*).
+                * Atau **bentangkan pakaian** di meja/kasur/hanger: AI akan mendeteksi kontur pakaian secara otomatis.
+                * YOLO AI mengekstrak kain pakaian tanpa perlu mengatur slider crop manual!
+                """
+            )
 
-        item_configs.append(
-            {
-                "filename": f.name,
-                "nickname": nickname,
-                "category": category,
-                "crop_bgr": cv2.cvtColor(cropped_rgb, cv2.COLOR_RGB2BGR),
-            }
+        if camera_file is not None:
+            img_bgr = decode_uploaded_image(camera_file)
+            detected = detect_garments_from_image(img_bgr)
+
+            annotated_preview = annotate_detected_garments(img_bgr, detected)
+            annotated_rgb = cv2.cvtColor(annotated_preview, cv2.COLOR_BGR2RGB)
+
+            st.success(f"✨ AI mendeteksi **{len(detected)} pakaian**:")
+            col_preview, col_items = st.columns([1, 1.2])
+            with col_preview:
+                render_safe_image(annotated_rgb, caption="Deteksi pakaian oleh AI")
+            with col_items:
+                for j, item in enumerate(detected):
+                    with st.expander(f"🧥 {item.label}", expanded=True):
+                        cat_idx = (
+                            GARMENT_CATEGORIES.index(item.category)
+                            if item.category in GARMENT_CATEGORIES
+                            else 0
+                        )
+                        chosen_cat = st.selectbox(
+                            "Kategori",
+                            GARMENT_CATEGORIES,
+                            index=cat_idx,
+                            key=f"cam_cat_{j}",
+                        )
+                        nick = st.text_input(
+                            "Nama / Nickname", value=item.label, key=f"cam_nick_{j}"
+                        )
+
+                        crop_rgb = cv2.cvtColor(item.crop_bgr, cv2.COLOR_BGR2RGB)
+                        render_safe_image(
+                            crop_rgb, caption="Potongan kain terdeteksi", max_height=140
+                        )
+
+                        item_configs.append(
+                            {
+                                "filename": f"camera_item_{j}.jpg",
+                                "nickname": nick,
+                                "category": chosen_cat,
+                                "crop_bgr": item.crop_bgr,
+                            }
+                        )
+        else:
+            st.info("👆 Ambil foto pakaian menggunakan kamera untuk memulai deteksi otomatis.")
+            return
+
+    else:
+        # File uploader mode
+        uploaded_files = st.file_uploader(
+            "One photo per item works best (a fairly plain background helps color detection).",
+            type=["jpg", "jpeg", "png", "webp"],
+            accept_multiple_files=True,
         )
+
+        if not uploaded_files:
+            st.info("👆 Upload one or more clothing photos to get started.")
+            return
+
+        use_ai_crop = st.checkbox(
+            "✨ Gunakan AI Auto-Detect untuk foto yang diunggah",
+            value=True,
+            help="AI mendeteksi dan meng-crop pakaian secara otomatis tanpa perlu menggeser slider.",
+        )
+
+        for i, f in enumerate(uploaded_files):
+            img_bgr = decode_uploaded_image(f)
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+            if use_ai_crop:
+                detected = detect_garments_from_image(img_bgr)
+                det = detected[0] if detected else None
+                default_cat = (
+                    det.category
+                    if det and det.category in GARMENT_CATEGORIES
+                    else "shirt"
+                )
+                crop_bgr = det.crop_bgr if det else img_bgr
+
+                with st.expander(
+                    f"🧥 {f.name} (✨ AI: {default_cat})", expanded=(i == 0)
+                ):
+                    c1, c2 = st.columns([1, 1])
+                    with c1:
+                        cat_idx = (
+                            GARMENT_CATEGORIES.index(default_cat)
+                            if default_cat in GARMENT_CATEGORIES
+                            else 0
+                        )
+                        category = st.selectbox(
+                            "Category",
+                            GARMENT_CATEGORIES,
+                            index=cat_idx,
+                            key=f"cat_{f.name}_{i}",
+                        )
+                        nickname = st.text_input(
+                            "Nickname (optional)",
+                            value=Path(f.name).stem,
+                            key=f"nick_{f.name}_{i}",
+                        )
+                    with c2:
+                        crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+                        render_safe_image(crop_rgb, caption="AI Cropped Preview")
+
+                item_configs.append(
+                    {
+                        "filename": f.name,
+                        "nickname": nickname,
+                        "category": category,
+                        "crop_bgr": crop_bgr,
+                    }
+                )
+            else:
+                # Manual sliders
+                with st.expander(f"🧥 {f.name}", expanded=(i == 0)):
+                    c1, c2 = st.columns([1, 1])
+                    with c1:
+                        category = st.selectbox(
+                            "Category", GARMENT_CATEGORIES, key=f"cat_{f.name}_{i}"
+                        )
+                        nickname = st.text_input(
+                            "Nickname (optional)",
+                            value=Path(f.name).stem,
+                            key=f"nick_{f.name}_{i}",
+                        )
+                        st.caption("Crop margins (%) -- trim away background/skin")
+                        left = st.slider("Left", 0, 45, 0, key=f"l_{f.name}_{i}")
+                        right = st.slider("Right", 0, 45, 0, key=f"r_{f.name}_{i}")
+                        top = st.slider("Top", 0, 45, 0, key=f"t_{f.name}_{i}")
+                        bottom = st.slider("Bottom", 0, 45, 0, key=f"b_{f.name}_{i}")
+                    with c2:
+                        cropped_rgb = crop_by_margins(img_rgb, left, right, top, bottom)
+                        render_safe_image(cropped_rgb, caption="Cropped preview")
+
+                item_configs.append(
+                    {
+                        "filename": f.name,
+                        "nickname": nickname,
+                        "category": category,
+                        "crop_bgr": cv2.cvtColor(cropped_rgb, cv2.COLOR_RGB2BGR),
+                    }
+                )
 
     # -- 3. Analyze --------------------------------------------------------
     st.subheader("2. Analyze")

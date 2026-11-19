@@ -41,3 +41,13 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# YOLO & PyTorch model weights
+*.pt
+*.pth
+*.onnx
+
+# User runtime data & temporary test outputs
+data/processed/user_crops/
+data/processed/user_garments.csv
+ootd_*.jpg

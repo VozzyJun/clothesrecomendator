@@ -112,6 +112,26 @@ def inject_custom_css() -> None:
             font-size: 1.35rem !important;
         }}
 
+        /* Generous bottom scroll extension for sidebar so bottom dropdowns,
+           popovers, and expanded options (such as Shopee category 'Pria')
+           have ample clearance and are never cut off by the viewport edge */
+        [data-testid="stSidebar"] [data-testid="stSidebarContent"],
+        [data-testid="stSidebar"] [data-testid="stSidebarUserContent"],
+        section[data-testid="stSidebar"] > div:first-child,
+        section[data-testid="stSidebar"] .stSidebarUserContent {{
+            padding-bottom: 22rem !important;
+        }}
+
+        /* Ensure BaseWeb popover options menu floats on top cleanly with elegant shadow */
+        [data-baseweb="popover"] {{
+            z-index: 999999 !important;
+        }}
+        [data-baseweb="menu"] {{
+            max-height: 280px !important;
+            border-radius: 10px !important;
+            box-shadow: 0 10px 30px rgba(46, 40, 35, 0.15) !important;
+        }}
+
         /* thin, accent-tinted dividers everywhere */
         hr {{
             border: none;
@@ -559,6 +579,12 @@ def page_get_my_colors() -> None:
             "to build `data/processed/garment_catalog.csv` first."
         )
 
+    # Dynamic bottom buffer extending the sidebar view so open menus & dropdowns never clip
+    st.sidebar.markdown(
+        "<div class='myhue-sidebar-spacer' style='height: 180px; width: 100%; pointer-events: none;'></div>",
+        unsafe_allow_html=True,
+    )
+
     render_hero(
         "🎨",
         "Color Analysis & Clothing Recommender",
@@ -830,6 +856,12 @@ def page_my_closet() -> None:
             key="shopee_closet_audience",
             help="Menyesuaikan kata kunci pencarian pakaian di Shopee",
         )
+
+    # Dynamic bottom buffer extending the sidebar view so open menus & dropdowns never clip
+    st.sidebar.markdown(
+        "<div class='myhue-sidebar-spacer' style='height: 180px; width: 100%; pointer-events: none;'></div>",
+        unsafe_allow_html=True,
+    )
 
     palette = palette_engine.get_palette(skin_tone, undertone)
     with st.container(key="profile_box"):
